@@ -3,6 +3,7 @@ namespace App\Http\Controllers\Cms;
 use App\Http\Controllers\Controller;
 use App\Models\PromoContent;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class ContentController extends Controller
 {
@@ -44,10 +45,24 @@ class ContentController extends Controller
             'starts_at'=>'nullable|date',
             'ends_at'=>'nullable|date|after_or_equal:starts_at',
         ]);
-        if($r->hasFile('file')){ $data['file_path'] = $r->file('file')->store('promos','public'); }
+
+        if ($r->hasFile('file')) {
+            $oldPath = $content->file_path;
+            $data['file_path'] = $r->file('file')->store('promos','public');
+            if (!empty($oldPath) && $oldPath !== $data['file_path']) {
+                Storage::disk('public')->delete($oldPath);
+            }
+        }
+
         $data['is_active'] = $r->boolean('is_active');
         $content->update($data);
         return back()->with('ok','Konten diperbarui');
     }
-    public function destroy(PromoContent $content){ $content->delete(); return back()->with('ok','Konten dihapus'); }
+    public function destroy(PromoContent $content){
+        if (!empty($content->file_path)) {
+            Storage::disk('public')->delete($content->file_path);
+        }
+        $content->delete();
+        return back()->with('ok','Konten dihapus');
+    }
 }

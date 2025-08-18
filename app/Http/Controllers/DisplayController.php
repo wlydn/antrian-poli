@@ -95,18 +95,25 @@ class DisplayController extends Controller
                         continue;
                     }
 
-                    $sqlQ = "select reg_periksa.no_reg, reg_periksa.no_rkm_medis, pasien.nm_pasien, reg_periksa.no_rawat, dokter.nm_dokter, reg_periksa.jam_reg \n" .
-                        "from reg_periksa inner join dokter inner join pasien inner join poliklinik \n" .
-                        "on reg_periksa.kd_dokter=dokter.kd_dokter \n" .
-                        "and reg_periksa.no_rkm_medis=pasien.no_rkm_medis \n" .
-                        "and reg_periksa.kd_poli=poliklinik.kd_poli \n" .
-                        "where reg_periksa.tgl_registrasi=current_date() \n" .
-                        "and poliklinik.nm_poli=? \n" .
-                        "and dokter.nm_dokter=? \n" .
-                        "and stts='Belum' \n" .
-                        "order by reg_periksa.jam_reg asc";
-
-                    $pasList = DB::connection('khanza')->select($sqlQ, [$j->nm_poli, $j->nm_dokter]);
+                    $pasList = DB::connection('khanza')->table('reg_periksa')
+                        ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
+                        ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
+                        ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
+                        ->select(
+                            'reg_periksa.no_reg',
+                            'reg_periksa.no_rkm_medis',
+                            'pasien.nm_pasien',
+                            'reg_periksa.no_rawat',
+                            'dokter.nm_dokter',
+                            'reg_periksa.jam_reg'
+                        )
+                        ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                        ->where('poliklinik.nm_poli', $j->nm_poli)
+                        ->where('dokter.nm_dokter', $j->nm_dokter)
+                        ->where('stts', 'Belum')
+                        ->orderBy('reg_periksa.jam_reg', 'asc')
+                        ->get()
+                        ->all();
 
                     // Pasien yang sedang dipanggil = antrean terdepan (status 'Belum' paling awal).
                     // Jika belum mulai: paksa null -> ditampilkan "000".
@@ -116,16 +123,26 @@ class DisplayController extends Controller
                     } else {
                         $current = $pasList[0] ?? null;
                         if (!$current) {
-                            $sqlLast = "select reg_periksa.no_reg, reg_periksa.no_rkm_medis, pasien.nm_pasien, reg_periksa.no_rawat, dokter.nm_dokter, reg_periksa.jam_reg \n" .
-                                "from reg_periksa inner join dokter inner join pasien inner join poliklinik \n" .
-                                "on reg_periksa.kd_dokter=dokter.kd_dokter \n" .
-                                "and reg_periksa.no_rkm_medis=pasien.no_rkm_medis \n" .
-                                "and reg_periksa.kd_poli=poliklinik.kd_poli \n" .
-                                "where reg_periksa.tgl_registrasi=current_date() \n" .
-                                "and poliklinik.nm_poli=? \n" .
-                                "and dokter.nm_dokter=? \n" .
-                                "order by CAST(reg_periksa.no_reg AS UNSIGNED) desc, reg_periksa.jam_reg desc";
-                            $lastRows = DB::connection('khanza')->select($sqlLast, [$j->nm_poli, $j->nm_dokter]);
+                            $lastRows = DB::connection('khanza')->table('reg_periksa')
+                                ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
+                                ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
+                                ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
+                                ->select(
+                                    'reg_periksa.no_reg',
+                                    'reg_periksa.no_rkm_medis',
+                                    'pasien.nm_pasien',
+                                    'reg_periksa.no_rawat',
+                                    'dokter.nm_dokter',
+                                    'reg_periksa.jam_reg'
+                                )
+                                ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                                ->where('poliklinik.nm_poli', $j->nm_poli)
+                                ->where('dokter.nm_dokter', $j->nm_dokter)
+                                ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
+                                ->orderBy('reg_periksa.jam_reg', 'desc')
+                                ->limit(1)
+                                ->get()
+                                ->all();
                             $current = $lastRows[0] ?? null;
                         }
                     }
@@ -154,17 +171,19 @@ class DisplayController extends Controller
         $pasien = [];
         if ($antrianAktif) {
             try {
-                $sql = "select reg_periksa.no_reg, reg_periksa.no_rkm_medis, pasien.nm_pasien, reg_periksa.no_rawat, dokter.nm_dokter, reg_periksa.jam_reg \n" .
-                    "from reg_periksa inner join dokter inner join pasien inner join poliklinik \n" .
-                    "on reg_periksa.kd_dokter=dokter.kd_dokter \n" .
-                    "and reg_periksa.no_rkm_medis=pasien.no_rkm_medis \n" .
-                    "and reg_periksa.kd_poli=poliklinik.kd_poli \n" .
-                    "where reg_periksa.tgl_registrasi=current_date() \n" .
-                    "and poliklinik.nm_poli=? \n" .
-                    "and dokter.nm_dokter=? \n" .
-                    "and stts='Belum' \n" .
-                    "order by CAST(reg_periksa.no_reg AS UNSIGNED) asc, reg_periksa.jam_reg asc";
-                $pasien = DB::connection('khanza')->select($sql, [$nmPoli, $nmDokter]);
+                $pasien = DB::connection('khanza')->table('reg_periksa')
+                    ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
+                    ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
+                    ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
+                    ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
+                    ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                    ->where('poliklinik.nm_poli', $nmPoli)
+                    ->where('dokter.nm_dokter', $nmDokter)
+                    ->where('stts', 'Belum')
+                    ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) asc')
+                    ->orderBy('reg_periksa.jam_reg', 'asc')
+                    ->get()
+                    ->all();
             } catch (\Throwable $e) {
                 $pasien = [];
             }
@@ -174,29 +193,34 @@ class DisplayController extends Controller
         $current = null;
         if ($isStartedSelected && $nmPoli && $nmDokter) {
             try {
-                $sqlCur = "select reg_periksa.no_reg, reg_periksa.no_rkm_medis, pasien.nm_pasien, reg_periksa.no_rawat, dokter.nm_dokter, reg_periksa.jam_reg \n" .
-                    "from reg_periksa inner join dokter inner join pasien inner join poliklinik \n" .
-                    "on reg_periksa.kd_dokter=dokter.kd_dokter \n" .
-                    "and reg_periksa.no_rkm_medis=pasien.no_rkm_medis \n" .
-                    "and reg_periksa.kd_poli=poliklinik.kd_poli \n" .
-                    "where reg_periksa.tgl_registrasi=current_date() \n" .
-                    "and poliklinik.nm_poli=? \n" .
-                    "and dokter.nm_dokter=? \n" .
-                    "and stts='Belum' \n" .
-                    "order by CAST(reg_periksa.no_reg AS UNSIGNED) asc, reg_periksa.jam_reg asc";
-                $rowsCur = DB::connection('khanza')->select($sqlCur, [$nmPoli, $nmDokter]);
+                $rowsCur = DB::connection('khanza')->table('reg_periksa')
+                    ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
+                    ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
+                    ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
+                    ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
+                    ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                    ->where('poliklinik.nm_poli', $nmPoli)
+                    ->where('dokter.nm_dokter', $nmDokter)
+                    ->where('stts', 'Belum')
+                    ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) asc')
+                    ->orderBy('reg_periksa.jam_reg', 'asc')
+                    ->get()
+                    ->all();
                 $current = $rowsCur[0] ?? null;
                 if (!$current) {
-                    $sqlLast = "select reg_periksa.no_reg, reg_periksa.no_rkm_medis, pasien.nm_pasien, reg_periksa.no_rawat, dokter.nm_dokter, reg_periksa.jam_reg \n" .
-                        "from reg_periksa inner join dokter inner join pasien inner join poliklinik \n" .
-                        "on reg_periksa.kd_dokter=dokter.kd_dokter \n" .
-                        "and reg_periksa.no_rkm_medis=pasien.no_rkm_medis \n" .
-                        "and reg_periksa.kd_poli=poliklinik.kd_poli \n" .
-                        "where reg_periksa.tgl_registrasi=current_date() \n" .
-                        "and poliklinik.nm_poli=? \n" .
-                        "and dokter.nm_dokter=? \n" .
-                        "order by CAST(reg_periksa.no_reg AS UNSIGNED) desc, reg_periksa.jam_reg desc";
-                    $rowsLast = DB::connection('khanza')->select($sqlLast, [$nmPoli, $nmDokter]);
+                    $rowsLast = DB::connection('khanza')->table('reg_periksa')
+                        ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
+                        ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
+                        ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
+                        ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
+                        ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                        ->where('poliklinik.nm_poli', $nmPoli)
+                        ->where('dokter.nm_dokter', $nmDokter)
+                        ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
+                        ->orderBy('reg_periksa.jam_reg', 'desc')
+                        ->limit(1)
+                        ->get()
+                        ->all();
                     $current = $rowsLast[0] ?? null;
                 }
             } catch (\Throwable $e) {
@@ -240,18 +264,25 @@ class DisplayController extends Controller
                         continue;
                     }
 
-                    $sqlQ = "select reg_periksa.no_reg, reg_periksa.no_rkm_medis, pasien.nm_pasien, reg_periksa.no_rawat, dokter.nm_dokter, reg_periksa.jam_reg \n" .
-                        "from reg_periksa inner join dokter inner join pasien inner join poliklinik \n" .
-                        "on reg_periksa.kd_dokter=dokter.kd_dokter \n" .
-                        "and reg_periksa.no_rkm_medis=pasien.no_rkm_medis \n" .
-                        "and reg_periksa.kd_poli=poliklinik.kd_poli \n" .
-                        "where reg_periksa.tgl_registrasi=current_date() \n" .
-                        "and poliklinik.nm_poli=? \n" .
-                        "and dokter.nm_dokter=? \n" .
-                        "and stts='Belum' \n" .
-                        "order by reg_periksa.jam_reg asc";
-
-                    $pasList = DB::connection('khanza')->select($sqlQ, [$j->nm_poli, $j->nm_dokter]);
+                    $pasList = DB::connection('khanza')->table('reg_periksa')
+                        ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
+                        ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
+                        ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
+                        ->select(
+                            'reg_periksa.no_reg',
+                            'reg_periksa.no_rkm_medis',
+                            'pasien.nm_pasien',
+                            'reg_periksa.no_rawat',
+                            'dokter.nm_dokter',
+                            'reg_periksa.jam_reg'
+                        )
+                        ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                        ->where('poliklinik.nm_poli', $j->nm_poli)
+                        ->where('dokter.nm_dokter', $j->nm_dokter)
+                        ->where('stts', 'Belum')
+                        ->orderBy('reg_periksa.jam_reg', 'asc')
+                        ->get()
+                        ->all();
 
                     // Pasien yang sedang dipanggil = antrean terdepan (status 'Belum' paling awal).
                     // Jika belum mulai: paksa null -> ditampilkan "000".
@@ -261,16 +292,26 @@ class DisplayController extends Controller
                     } else {
                         $current = $pasList[0] ?? null;
                         if (!$current) {
-                            $sqlLast = "select reg_periksa.no_reg, reg_periksa.no_rkm_medis, pasien.nm_pasien, reg_periksa.no_rawat, dokter.nm_dokter, reg_periksa.jam_reg \n" .
-                                "from reg_periksa inner join dokter inner join pasien inner join poliklinik \n" .
-                                "on reg_periksa.kd_dokter=dokter.kd_dokter \n" .
-                                "and reg_periksa.no_rkm_medis=pasien.no_rkm_medis \n" .
-                                "and reg_periksa.kd_poli=poliklinik.kd_poli \n" .
-                                "where reg_periksa.tgl_registrasi=current_date() \n" .
-                                "and poliklinik.nm_poli=? \n" .
-                                "and dokter.nm_dokter=? \n" .
-                                "order by CAST(reg_periksa.no_reg AS UNSIGNED) desc, reg_periksa.jam_reg desc";
-                            $lastRows = DB::connection('khanza')->select($sqlLast, [$j->nm_poli, $j->nm_dokter]);
+                            $lastRows = DB::connection('khanza')->table('reg_periksa')
+                                ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
+                                ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
+                                ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
+                                ->select(
+                                    'reg_periksa.no_reg',
+                                    'reg_periksa.no_rkm_medis',
+                                    'pasien.nm_pasien',
+                                    'reg_periksa.no_rawat',
+                                    'dokter.nm_dokter',
+                                    'reg_periksa.jam_reg'
+                                )
+                                ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                                ->where('poliklinik.nm_poli', $j->nm_poli)
+                                ->where('dokter.nm_dokter', $j->nm_dokter)
+                                ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
+                                ->orderBy('reg_periksa.jam_reg', 'desc')
+                                ->limit(1)
+                                ->get()
+                                ->all();
                             $current = $lastRows[0] ?? null;
                         }
                     }
@@ -331,29 +372,34 @@ class DisplayController extends Controller
 
             // Hanya ambil pasien jika jadwal sudah mulai
             if ($started) {
-                $sql = "select reg_periksa.no_reg, reg_periksa.no_rkm_medis, pasien.nm_pasien, reg_periksa.no_rawat, dokter.nm_dokter, reg_periksa.jam_reg \n" .
-                    "from reg_periksa inner join dokter inner join pasien inner join poliklinik \n" .
-                    "on reg_periksa.kd_dokter=dokter.kd_dokter \n" .
-                    "and reg_periksa.no_rkm_medis=pasien.no_rkm_medis \n" .
-                    "and reg_periksa.kd_poli=poliklinik.kd_poli \n" .
-                    "where reg_periksa.tgl_registrasi=current_date() \n" .
-                    "and poliklinik.nm_poli=? \n" .
-                    "and dokter.nm_dokter=? \n" .
-                    "and stts='Belum' \n" .
-                    "order by CAST(reg_periksa.no_reg AS UNSIGNED) asc, reg_periksa.jam_reg asc";
-                $rows = DB::connection('khanza')->select($sql, [$nmPoli, $nmDokter]);
+                $rows = DB::connection('khanza')->table('reg_periksa')
+                    ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
+                    ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
+                    ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
+                    ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
+                    ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                    ->where('poliklinik.nm_poli', $nmPoli)
+                    ->where('dokter.nm_dokter', $nmDokter)
+                    ->where('stts', 'Belum')
+                    ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) asc')
+                    ->orderBy('reg_periksa.jam_reg', 'asc')
+                    ->get()
+                    ->all();
                 $current = $rows[0] ?? null;
                 if (!$current) {
-                    $sqlLast = "select reg_periksa.no_reg, reg_periksa.no_rkm_medis, pasien.nm_pasien, reg_periksa.no_rawat, dokter.nm_dokter, reg_periksa.jam_reg \n" .
-                        "from reg_periksa inner join dokter inner join pasien inner join poliklinik \n" .
-                        "on reg_periksa.kd_dokter=dokter.kd_dokter \n" .
-                        "and reg_periksa.no_rkm_medis=pasien.no_rkm_medis \n" .
-                        "and reg_periksa.kd_poli=poliklinik.kd_poli \n" .
-                        "where reg_periksa.tgl_registrasi=current_date() \n" .
-                        "and poliklinik.nm_poli=? \n" .
-                        "and dokter.nm_dokter=? \n" .
-                        "order by CAST(reg_periksa.no_reg AS UNSIGNED) desc, reg_periksa.jam_reg desc";
-                    $rowsLast = DB::connection('khanza')->select($sqlLast, [$nmPoli, $nmDokter]);
+                    $rowsLast = DB::connection('khanza')->table('reg_periksa')
+                        ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
+                        ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
+                        ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
+                        ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
+                        ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                        ->where('poliklinik.nm_poli', $nmPoli)
+                        ->where('dokter.nm_dokter', $nmDokter)
+                        ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
+                        ->orderBy('reg_periksa.jam_reg', 'desc')
+                        ->limit(1)
+                        ->get()
+                        ->all();
                     $current = $rowsLast[0] ?? null;
                 }
             } else {

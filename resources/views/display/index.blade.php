@@ -193,7 +193,7 @@
             display: inline-block;
             white-space: nowrap;
             will-change: transform;
-            animation: ticker-scroll 35s linear infinite;
+            animation: ticker-scroll 40s linear infinite;
             color: #111;
             padding-left: 100%;
         }
