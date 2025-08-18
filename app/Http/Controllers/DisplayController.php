@@ -411,11 +411,4 @@ class DisplayController extends Controller
 
         return view('display.partials._current', compact('current','started'));
     }
-
-    // Partial ticker untuk footer — mengambil teks dari .env setiap refresh
-    public function partialTicker()
-    {
-        $ticker = env('FOOTER_TICKER_TEXT');
-        return view('display.partials._ticker', compact('ticker'));
-    }
 }

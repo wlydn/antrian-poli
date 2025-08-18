@@ -179,13 +179,25 @@
             height: 56px;
             display: flex;
             align-items: center;
-            justify-content: center;
+            justify-content: space-between;
             padding: 0 12px
+        }
+
+        .footer-full .footer-brand{
+            color: #ffffff;
+            font-weight: 400;
+            font-size: 10px;
+            white-space: nowrap;
+            margin-left: 10px;
+        }
+        .footer-full .footer-brand .heart{
+            margin: 0 4px;
         }
 
         .footer-full .ticker {
             position: relative;
-            width: 100%;
+            flex: 1;
+            min-width: 0;
             overflow: hidden
         }
 
@@ -195,7 +207,7 @@
             will-change: transform;
             animation: ticker-scroll 40s linear infinite;
             color: #ffffff;
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 650;
             padding-left: 100%;
         }
@@ -220,7 +232,6 @@
                     <div style="text-align:center">
                         <div class="big">ANTRIAN POLIKLINIK</div>
                     </div>
-                    {{-- <div class="muted">Sesi aktif hari ini: {{ isset($sessions) ? count($sessions) : 0 }}</div> --}}
                 </div>
                 <div class="clock">
                     <div class="date" x-text="nowDate"></div>
@@ -260,13 +271,16 @@
 
   <div class="footer-full">
     @php
-      // Static text berjalan di footer; dapat diubah lewat .env: FOOTER_TICKER_TEXT
-      $ticker = env('FOOTER_TICKER_TEXT');
+      // Static text berjalan di footer: baca dari konfigurasi display.
+      $ticker = config('display.footer_ticker_text');
     @endphp
     <div class="ticker" aria-label="pengumuman berjalan">
       <div class="ticker__track">
         <span>{{ $ticker }}</span>
       </div>
+    </div>
+    <div class="footer-brand" aria-label="Made with love">
+      Made with <span class="heart" aria-hidden="true">❤️</span> by IT Rayhan
     </div>
   </div>
 
