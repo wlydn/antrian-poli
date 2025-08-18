@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Display Antrian Poliklinik</title>
+    <title>Antrian Poliklinik</title>
     <link href="/assets/css/display.css" rel="stylesheet" />
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <style>
@@ -271,8 +271,8 @@
 
   <div class="footer-full">
     @php
-      // Static text berjalan di footer: baca dari konfigurasi display.
-      $ticker = config('display.footer_ticker_text');
+      // Static text berjalan di footer: baca dari konfigurasi display dan sanitasi untuk mencegah XSS.
+      $ticker = strip_tags(config('display.footer_ticker_text'));
     @endphp
     <div class="ticker" aria-label="pengumuman berjalan">
       <div class="ticker__track">
