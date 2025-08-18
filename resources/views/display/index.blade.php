@@ -52,7 +52,7 @@
         }
 
         .big {
-            font-size: 36px;
+            font-size: 40px;
             font-weight: 800
         }
 
@@ -173,7 +173,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: #f8fafc;
+            background: #51ba79;
             border-top: 1px solid #e5e7eb;
             z-index: 50;
             height: 56px;
@@ -194,7 +194,9 @@
             white-space: nowrap;
             will-change: transform;
             animation: ticker-scroll 40s linear infinite;
-            color: #111;
+            color: #ffffff;
+            font-size: 20px;
+            font-weight: 650;
             padding-left: 100%;
         }
 
