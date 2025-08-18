@@ -1,0 +1,18 @@
+/* Placeholder stylesheet to avoid 404 errors on /assets/css/display.css.
+   Primary styles are defined inline in resources/views/display/index.blade.php.
+   You may move shared styles here later if desired. */
+
+:root{
+  --bg:#ffffff;
+  --panel:#ffffff;
+  --muted:rgba(0,0,0,.6);
+  --border:#e5e7eb;
+}
+
+html,body{margin:0;padding:0;background:var(--bg);color:#111}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;color:#111}
+.muted{opacity:.8;color:var(--muted)}
+
+/* Slider helpers */
+.slide{transition:opacity .8s}
+.slide.active{opacity:1}
