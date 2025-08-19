@@ -9,10 +9,10 @@ use App\Models\PromoContent;
 class DisplayController extends Controller
 {
     // Halaman utama display: antrian + slider
-    public function index(Request $request)
+    public function index()
     {
-        $nmPoli   = $request->query('poli');   // contoh: "Poli Umum"
-        $nmDokter = $request->query('dokter'); // contoh: "dr. Budi"
+        $nmPoli   = request()->query('poli');   // contoh: "Poli Umum"
+        $nmDokter = request()->query('dokter'); // contoh: "dr. Budi"
 
         // 1) Cek jadwal hari ini dari DB SIK (tabel: jadwal)
         //    Kolom contoh: kd_dokter, hari_kerja (SENIN dst), jam_mulai, jam_selesai, kd_poli, kuota
@@ -107,10 +107,11 @@ class DisplayController extends Controller
                             'dokter.nm_dokter',
                             'reg_periksa.jam_reg'
                         )
-                        ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                        ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
                         ->where('poliklinik.nm_poli', $j->nm_poli)
                         ->where('dokter.nm_dokter', $j->nm_dokter)
                         ->where('stts', 'Belum')
+                        ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) asc')
                         ->orderBy('reg_periksa.jam_reg', 'asc')
                         ->get()
                         ->all();
@@ -135,7 +136,7 @@ class DisplayController extends Controller
                                     'dokter.nm_dokter',
                                     'reg_periksa.jam_reg'
                                 )
-                                ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                                ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
                                 ->where('poliklinik.nm_poli', $j->nm_poli)
                                 ->where('dokter.nm_dokter', $j->nm_dokter)
                                 ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
@@ -176,7 +177,7 @@ class DisplayController extends Controller
                     ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
                     ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
                     ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
-                    ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                    ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
                     ->where('poliklinik.nm_poli', $nmPoli)
                     ->where('dokter.nm_dokter', $nmDokter)
                     ->where('stts', 'Belum')
@@ -190,6 +191,11 @@ class DisplayController extends Controller
         }
 
         // Hitung current untuk hero pada render awal: jika sudah mulai ambil 'Belum' pertama, jika kosong fallback nomor terakhir.
+        // Defaultkan filter poli/dokter dari jadwal aktif bila tidak disuplai di query
+        if ($isStartedSelected && $jadwal) {
+            $nmPoli = $nmPoli ?: ($jadwal->nm_poli ?? null);
+            $nmDokter = $nmDokter ?: ($jadwal->nm_dokter ?? null);
+        }
         $current = null;
         if ($isStartedSelected && $nmPoli && $nmDokter) {
             try {
@@ -198,7 +204,7 @@ class DisplayController extends Controller
                     ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
                     ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
                     ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
-                    ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                    ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
                     ->where('poliklinik.nm_poli', $nmPoli)
                     ->where('dokter.nm_dokter', $nmDokter)
                     ->where('stts', 'Belum')
@@ -213,7 +219,7 @@ class DisplayController extends Controller
                         ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
                         ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
                         ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
-                        ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                        ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
                         ->where('poliklinik.nm_poli', $nmPoli)
                         ->where('dokter.nm_dokter', $nmDokter)
                         ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
@@ -234,7 +240,7 @@ class DisplayController extends Controller
     }
 
     // Partial untuk auto-refresh list antrian: kembalikan hanya HTML partial queue
-    public function partialQueue(Request $request){
+    public function partialQueue(){
         $locale = 'id';
         Carbon::setLocale($locale);
         $hari = Str::upper(Carbon::now()->locale($locale)->dayName);
@@ -276,10 +282,11 @@ class DisplayController extends Controller
                             'dokter.nm_dokter',
                             'reg_periksa.jam_reg'
                         )
-                        ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                        ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
                         ->where('poliklinik.nm_poli', $j->nm_poli)
                         ->where('dokter.nm_dokter', $j->nm_dokter)
                         ->where('stts', 'Belum')
+                        ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) asc')
                         ->orderBy('reg_periksa.jam_reg', 'asc')
                         ->get()
                         ->all();
@@ -304,7 +311,7 @@ class DisplayController extends Controller
                                     'dokter.nm_dokter',
                                     'reg_periksa.jam_reg'
                                 )
-                                ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                                ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
                                 ->where('poliklinik.nm_poli', $j->nm_poli)
                                 ->where('dokter.nm_dokter', $j->nm_dokter)
                                 ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
@@ -348,7 +355,7 @@ class DisplayController extends Controller
             // Cek jadwal hari ini untuk poli/dokter (jika disediakan)
             $locale = 'id';
             Carbon::setLocale($locale);
-            $hari = \Illuminate\Support\Str::upper(Carbon::now()->locale($locale)->dayName);
+            $hari = Str::upper(Carbon::now()->locale($locale)->dayName);
 
             $jadwal = DB::connection('khanza')->table('jadwal')
                 ->join('dokter', 'dokter.kd_dokter', '=', 'jadwal.kd_dokter')
@@ -371,13 +378,18 @@ class DisplayController extends Controller
             }
 
             // Hanya ambil pasien jika jadwal sudah mulai
+            // Defaultkan filter poli/dokter dari jadwal aktif bila tidak disuplai di query
+            if ($started && $jadwal) {
+                $nmPoli = $nmPoli ?: ($jadwal->nm_poli ?? null);
+                $nmDokter = $nmDokter ?: ($jadwal->nm_dokter ?? null);
+            }
             if ($started) {
                 $rows = DB::connection('khanza')->table('reg_periksa')
                     ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
                     ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
                     ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
                     ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
-                    ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                    ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
                     ->where('poliklinik.nm_poli', $nmPoli)
                     ->where('dokter.nm_dokter', $nmDokter)
                     ->where('stts', 'Belum')
@@ -392,7 +404,7 @@ class DisplayController extends Controller
                         ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
                         ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
                         ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
-                        ->whereDate('reg_periksa.tgl_registrasi', \Carbon\Carbon::today())
+                        ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
                         ->where('poliklinik.nm_poli', $nmPoli)
                         ->where('dokter.nm_dokter', $nmDokter)
                         ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
