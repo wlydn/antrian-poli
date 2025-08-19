@@ -1,7 +1,7 @@
 @if(empty($sessions))
   <div class="queue-empty">
     <div class="fw-600 text-32 text-center opacity-95">
-      Belum ada / telah berakhir sesi poli aktif untuk hari ini
+      Belum ada / telah berakhir sesi poli untuk hari ini
     </div>
   </div>
 @else
