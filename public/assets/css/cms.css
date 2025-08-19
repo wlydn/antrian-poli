@@ -1,0 +1,89 @@
+/* CMS Admin Stylesheet (migrated from inline styles in cms views) */
+:root{
+  --bg:#0b1020;
+  --card:#121936;
+  --text:#ffffff;
+  --muted:#a3b1e1;
+  --border:#1f2a44;
+  --btn:#2563eb;
+  --btn-secondary:#374151;
+  --btn-danger:#dc2626;
+}
+
+*,
+*::before,
+*::after{ box-sizing: border-box; }
+
+html, body{
+  margin:0;
+  padding:0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+/* Utilities */
+.m-0{ margin:0; }
+.mt-10{ margin-top:10px; }
+.mt-12{ margin-top:12px; }
+.mt-16{ margin-top:16px; }
+.mb-6{ margin-bottom:6px; }
+.mb-10{ margin-bottom:10px; }
+.overflow-auto{ overflow:auto; }
+.fw-700{ font-weight:700; }
+.align-center{ align-items:center; }
+.pl-18{ padding-left:18px; }
+
+/* Layout */
+.container{ max-width:1100px; margin:0 auto; padding:24px; }
+.card{ background:var(--card); border-radius:12px; padding:20px; }
+.topbar{ display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+
+/* Buttons */
+a.btn, button.btn, input.btn{
+  display:inline-block;
+  background: var(--btn);
+  color:#fff;
+  text-decoration:none;
+  border:none;
+  border-radius:8px;
+  padding:10px 14px;
+  font-weight:600;
+  cursor:pointer;
+}
+.btn.secondary{ background: var(--btn-secondary); }
+.btn.danger{ background: var(--btn-danger); }
+.btn.muted{ background:#4b5563; }
+
+/* Tables */
+table{ width:100%; border-collapse: collapse; }
+th,td{ padding:10px 12px; border-bottom:1px solid var(--border); vertical-align: top; }
+th{ color: var(--muted); text-align:left; }
+.row-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+
+/* Messages */
+.flash{ background:#065f46; color:#d1fae5; padding:10px 12px; border-radius:8px; margin-bottom:14px; }
+.errors{ background:#7f1d1d; color:#fee2e2; border-radius:8px; padding:12px 14px; margin-bottom:14px; }
+
+/* Forms */
+.grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.field{ display:flex; flex-direction:column; margin-bottom:14px; }
+.field label{ margin-bottom:6px; color:#a3b1e1; font-weight:600; }
+.field input[type="text"],
+.field input[type="number"],
+.field input[type="datetime-local"],
+.field select,
+.field input[type="file"]{
+  background:#0b122a; border:1px solid var(--border); color:#fff; border-radius:8px; padding:10px 12px;
+}
+.help{ font-size:12px; opacity:.75; margin-top:6px; }
+
+.row{ display:flex; gap:10px; flex-wrap:wrap; }
+
+.preview{ background:#0b122a; border:1px solid var(--border); border-radius:10px; padding:12px; display:flex; align-items:center; justify-content:center; min-height:180px; }
+img.max, video.max{ max-width:100%; max-height:320px; object-fit:contain; border-radius:8px; }
+
+img.thumb{ max-height:64px; border-radius:6px; }
+code{ background:#0b122a; padding:2px 6px; border-radius:6px; }
+
+.muted{ opacity:.8; }

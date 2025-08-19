@@ -1,55 +1,35 @@
 <?php
+
 namespace App\Http\Controllers;
+
+use App\Models\PromoContent;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Carbon\Carbon;
-use App\Models\PromoContent;
 
 class DisplayController extends Controller
 {
-    // Halaman utama display: antrian + slider
-    public function index()
-    {
-        $nmPoli   = request()->query('poli');   // contoh: "Poli Umum"
+    /**
+     * Halaman utama display: antrian + slider
+     */
+    public function index(){
+        $nmPoli = request()->query('poli');   // contoh: "Poli Umum"
         $nmDokter = request()->query('dokter'); // contoh: "dr. Budi"
 
-        // 1) Cek jadwal hari ini dari DB SIK (tabel: jadwal)
-        //    Kolom contoh: kd_dokter, hari_kerja (SENIN dst), jam_mulai, jam_selesai, kd_poli, kuota
-        $locale = 'id';
-        Carbon::setLocale($locale);
-        $hari = Str::upper(Carbon::now()->locale($locale)->dayName); // SENIN/SELASA/...
+        $hari = $this->hariIdUpper();
 
-        $jadwal = null;
-        try {
-            $jadwal = DB::connection('khanza')->table('jadwal')
-                ->join('dokter', 'dokter.kd_dokter', '=', 'jadwal.kd_dokter')
-                ->join('poliklinik', 'poliklinik.kd_poli', '=', 'jadwal.kd_poli')
-                ->select('jadwal.*', 'dokter.nm_dokter', 'poliklinik.nm_poli')
-                ->where('hari_kerja', $hari)
-                ->when($nmPoli, fn($q) => $q->where('poliklinik.nm_poli', $nmPoli))
-                ->when($nmDokter, fn($q) => $q->where('dokter.nm_dokter', $nmDokter))
-                ->first();
-        } catch (\Throwable $e) {
-            $jadwal = null;
-        }
+        // 1) Cek jadwal hari ini dari DB SIK (tabel: jadwal)
+        $jadwal = $this->fetchJadwalToday($hari, $nmPoli, $nmDokter);
 
         $now = Carbon::now();
-        $antrianAktif = false;
         $jamMulai = $jamSelesai = null;
+        $antrianAktif = false;
 
         if ($jadwal) {
-            $validJam = ($jadwal->jam_mulai ?? '00:00:00') !== '00:00:00' && ($jadwal->jam_selesai ?? '00:00:00') !== '00:00:00';
-            try {
-                $jamMulai = Carbon::createFromFormat('H:i:s', $jadwal->jam_mulai);
-            } catch (\Throwable $e) {
-                $jamMulai = null;
-            }
-            try {
-                $jamSelesai = Carbon::createFromFormat('H:i:s', $jadwal->jam_selesai);
-            } catch (\Throwable $e) {
-                $jamSelesai = null;
-            }
+            $jamMulai = $this->parseJam($jadwal->jam_mulai);
+            $jamSelesai = $this->parseJam($jadwal->jam_selesai);
+            $validJam = $jadwal->jam_mulai !== '00:00:00' && $jadwal->jam_selesai !== '00:00:00';
             $antrianAktif = $validJam
                 && $jamMulai instanceof Carbon
                 && $jamSelesai instanceof Carbon
@@ -62,288 +42,97 @@ class DisplayController extends Controller
 
         // 2) Ambil konten promo publishable
         $promos = PromoContent::publishable()->get();
-        // Fallback: bila tidak ada yang memenuhi kriteria publishable (mis. is_active tidak dicentang
-        // atau jadwal tayang di luar waktu), tampilkan semua berdasarkan urutan agar layar tidak kosong.
         if ($promos->isEmpty()) {
-            $promos = PromoContent::orderBy('display_order')->get();
+            $promos = PromoContent::orderBy('display_order')->get(); // fallback agar layar tidak kosong
         }
 
         // Bangun daftar sesi (poli-dokter) aktif HARI INI dan ambil antrian masing-masing
-        $sessions = [];
-        try {
-            $now2 = Carbon::now();
-
-            $jadwalsAct = DB::connection('khanza')->table('jadwal')
-                ->join('dokter', 'dokter.kd_dokter', '=', 'jadwal.kd_dokter')
-                ->join('poliklinik', 'poliklinik.kd_poli', '=', 'jadwal.kd_poli')
-                ->select('jadwal.*', 'dokter.nm_dokter', 'poliklinik.nm_poli')
-                ->where('hari_kerja', $hari)
-                ->where('jadwal.jam_mulai', '!=', '00:00:00')
-                ->where('jadwal.jam_selesai', '!=', '00:00:00')
-                ->get();
-
-            foreach ($jadwalsAct as $j) {
-                try {
-                    $jm = Carbon::createFromFormat('H:i:s', $j->jam_mulai);
-                    $js = Carbon::createFromFormat('H:i:s', $j->jam_selesai);
-
-                    // Status sesi sepanjang hari (tanpa menyaring hanya yang aktif)
-                    $status = $now2->lt($jm) ? 'Belum Mulai' : ($now2->gt($js) ? 'Selesai' : 'Dalam Pelayanan');
-
-                    // Sembunyikan sesi yang sudah berakhir
-                    if ($status === 'Selesai') {
-                        continue;
-                    }
-
-                    $pasList = DB::connection('khanza')->table('reg_periksa')
-                        ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
-                        ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
-                        ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
-                        ->select(
-                            'reg_periksa.no_reg',
-                            'reg_periksa.no_rkm_medis',
-                            'pasien.nm_pasien',
-                            'reg_periksa.no_rawat',
-                            'dokter.nm_dokter',
-                            'reg_periksa.jam_reg'
-                        )
-                        ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
-                        ->where('poliklinik.nm_poli', $j->nm_poli)
-                        ->where('dokter.nm_dokter', $j->nm_dokter)
-                        ->where('stts', 'Belum')
-                        ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) asc')
-                        ->orderBy('reg_periksa.jam_reg', 'asc')
-                        ->get()
-                        ->all();
-
-                    // Pasien yang sedang dipanggil = antrean terdepan (status 'Belum' paling awal).
-                    // Jika belum mulai: paksa null -> ditampilkan "000".
-                    // Jika tidak ada 'Belum' lagi: fallback ke nomor terakhir hari ini.
-                    if ($status === 'Belum Mulai') {
-                        $current = null;
-                    } else {
-                        $current = $pasList[0] ?? null;
-                        if (!$current) {
-                            $lastRows = DB::connection('khanza')->table('reg_periksa')
-                                ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
-                                ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
-                                ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
-                                ->select(
-                                    'reg_periksa.no_reg',
-                                    'reg_periksa.no_rkm_medis',
-                                    'pasien.nm_pasien',
-                                    'reg_periksa.no_rawat',
-                                    'dokter.nm_dokter',
-                                    'reg_periksa.jam_reg'
-                                )
-                                ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
-                                ->where('poliklinik.nm_poli', $j->nm_poli)
-                                ->where('dokter.nm_dokter', $j->nm_dokter)
-                                ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
-                                ->orderBy('reg_periksa.jam_reg', 'desc')
-                                ->limit(1)
-                                ->get()
-                                ->all();
-                            $current = $lastRows[0] ?? null;
-                        }
-                    }
-
-                    $sessions[] = [
-                        'nm_poli' => $j->nm_poli,
-                        'nm_dokter' => $j->nm_dokter,
-                        'jam_mulai' => $jm,
-                        'jam_selesai' => $js,
-                        'status' => $status,
-                        'current' => $current,
-                        'pasien' => $pasList,
-                    ];
-                } catch (\Throwable $e) {
-                    // skip jadwal bermasalah
-                }
-            }
-        } catch (\Throwable $e) {
-            $sessions = [];
-        }
+        $sessions = $this->fetchSessionsToday($hari);
 
         // Tampilkan grid sesi sepanjang hari, tidak tergantung aktif
         $antrianAktif = true;
 
-        // 3) Ambil antrian pasien dari SIK hanya jika jadwal aktif
+        // 3) Ambil antrian pasien dari SIK (untuk kompatibilitas variabel lama)
         $pasien = [];
-        if ($antrianAktif) {
-            try {
-                $pasien = DB::connection('khanza')->table('reg_periksa')
-                    ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
-                    ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
-                    ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
-                    ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
-                    ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
-                    ->where('poliklinik.nm_poli', $nmPoli)
-                    ->where('dokter.nm_dokter', $nmDokter)
-                    ->where('stts', 'Belum')
-                    ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) asc')
-                    ->orderBy('reg_periksa.jam_reg', 'asc')
-                    ->get()
-                    ->all();
-            } catch (\Throwable $e) {
-                $pasien = [];
+        try {
+            $q = DB::connection('khanza')->table('reg_periksa')
+                ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
+                ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
+                ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
+                ->select(
+                    'reg_periksa.no_reg',
+                    'reg_periksa.no_rkm_medis',
+                    'pasien.nm_pasien',
+                    'reg_periksa.no_rawat',
+                    'dokter.nm_dokter',
+                    'reg_periksa.jam_reg'
+                )
+                ->whereDate('reg_periksa.tgl_registrasi', Carbon::today());
+
+            if ($nmPoli) {
+                $q->where('poliklinik.nm_poli', $nmPoli);
             }
+            if ($nmDokter) {
+                $q->where('dokter.nm_dokter', $nmDokter);
+            }
+
+            $pasien = $q->where('stts', 'Belum')
+                ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) asc')
+                ->orderBy('reg_periksa.jam_reg', 'asc')
+                ->get()
+                ->all();
+        } catch (\Throwable $e) {
+            report($e);
+            $pasien = [];
         }
 
-        // Hitung current untuk hero pada render awal: jika sudah mulai ambil 'Belum' pertama, jika kosong fallback nomor terakhir.
-        // Defaultkan filter poli/dokter dari jadwal aktif bila tidak disuplai di query
+        // Hitung current untuk hero pada render awal:
         if ($isStartedSelected && $jadwal) {
             $nmPoli = $nmPoli ?: ($jadwal->nm_poli ?? null);
             $nmDokter = $nmDokter ?: ($jadwal->nm_dokter ?? null);
         }
+
         $current = null;
         if ($isStartedSelected && $nmPoli && $nmDokter) {
-            try {
-                $rowsCur = DB::connection('khanza')->table('reg_periksa')
-                    ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
-                    ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
-                    ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
-                    ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
-                    ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
-                    ->where('poliklinik.nm_poli', $nmPoli)
-                    ->where('dokter.nm_dokter', $nmDokter)
-                    ->where('stts', 'Belum')
-                    ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) asc')
-                    ->orderBy('reg_periksa.jam_reg', 'asc')
-                    ->get()
-                    ->all();
-                $current = $rowsCur[0] ?? null;
-                if (!$current) {
-                    $rowsLast = DB::connection('khanza')->table('reg_periksa')
-                        ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
-                        ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
-                        ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
-                        ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
-                        ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
-                        ->where('poliklinik.nm_poli', $nmPoli)
-                        ->where('dokter.nm_dokter', $nmDokter)
-                        ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
-                        ->orderBy('reg_periksa.jam_reg', 'desc')
-                        ->limit(1)
-                        ->get()
-                        ->all();
-                    $current = $rowsLast[0] ?? null;
-                }
-            } catch (\Throwable $e) {
-                $current = null;
-            }
+            $current = $this->resolveCurrent('Dalam Pelayanan', $nmPoli, $nmDokter);
         }
 
         // Oper variabel 'started' ke view agar hero "Nomor Antrian Saat Ini" dapat menampilkan 000 sebelum praktik dimulai
         $started = $isStartedSelected;
-        return view('display.index', compact('promos','sessions','pasien','antrianAktif','jadwal','jamMulai','jamSelesai','nmPoli','nmDokter','started','current'));
+
+        // Siapkan ticker dari konfigurasi (sanitize di controller, hindari @php di view)
+        $ticker = strip_tags((string) config('display.footer_ticker_text'));
+
+        return view('display.index', compact(
+            'promos',
+            'sessions',
+            'pasien',
+            'antrianAktif',
+            'jadwal',
+            'jamMulai',
+            'jamSelesai',
+            'nmPoli',
+            'nmDokter',
+            'started',
+            'current',
+            'ticker'
+        ));
     }
 
-    // Partial untuk auto-refresh list antrian: kembalikan hanya HTML partial queue
+    /**
+     * Partial untuk auto-refresh list antrian: kembalikan hanya HTML partial queue
+     */
     public function partialQueue(){
-        $locale = 'id';
-        Carbon::setLocale($locale);
-        $hari = Str::upper(Carbon::now()->locale($locale)->dayName);
-
-        $sessions = [];
-        try {
-            $now2 = Carbon::now();
-
-            $jadwalsAct = DB::connection('khanza')->table('jadwal')
-                ->join('dokter', 'dokter.kd_dokter', '=', 'jadwal.kd_dokter')
-                ->join('poliklinik', 'poliklinik.kd_poli', '=', 'jadwal.kd_poli')
-                ->select('jadwal.*', 'dokter.nm_dokter', 'poliklinik.nm_poli')
-                ->where('hari_kerja', $hari)
-                ->where('jadwal.jam_mulai', '!=', '00:00:00')
-                ->where('jadwal.jam_selesai', '!=', '00:00:00')
-                ->get();
-
-            foreach ($jadwalsAct as $j) {
-                try {
-                    $jm = Carbon::createFromFormat('H:i:s', $j->jam_mulai);
-                    $js = Carbon::createFromFormat('H:i:s', $j->jam_selesai);
-
-                    $status = $now2->lt($jm) ? 'Belum Mulai' : ($now2->gt($js) ? 'Selesai' : 'Dalam Pelayanan');
-
-                    // Sembunyikan sesi yang sudah berakhir
-                    if ($status === 'Selesai') {
-                        continue;
-                    }
-
-                    $pasList = DB::connection('khanza')->table('reg_periksa')
-                        ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
-                        ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
-                        ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
-                        ->select(
-                            'reg_periksa.no_reg',
-                            'reg_periksa.no_rkm_medis',
-                            'pasien.nm_pasien',
-                            'reg_periksa.no_rawat',
-                            'dokter.nm_dokter',
-                            'reg_periksa.jam_reg'
-                        )
-                        ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
-                        ->where('poliklinik.nm_poli', $j->nm_poli)
-                        ->where('dokter.nm_dokter', $j->nm_dokter)
-                        ->where('stts', 'Belum')
-                        ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) asc')
-                        ->orderBy('reg_periksa.jam_reg', 'asc')
-                        ->get()
-                        ->all();
-
-                    // Pasien yang sedang dipanggil = antrean terdepan (status 'Belum' paling awal).
-                    // Jika belum mulai: paksa null -> ditampilkan "000".
-                    // Jika tidak ada 'Belum' lagi: fallback ke nomor terakhir hari ini.
-                    if ($status === 'Belum Mulai') {
-                        $current = null;
-                    } else {
-                        $current = $pasList[0] ?? null;
-                        if (!$current) {
-                            $lastRows = DB::connection('khanza')->table('reg_periksa')
-                                ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
-                                ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
-                                ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
-                                ->select(
-                                    'reg_periksa.no_reg',
-                                    'reg_periksa.no_rkm_medis',
-                                    'pasien.nm_pasien',
-                                    'reg_periksa.no_rawat',
-                                    'dokter.nm_dokter',
-                                    'reg_periksa.jam_reg'
-                                )
-                                ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
-                                ->where('poliklinik.nm_poli', $j->nm_poli)
-                                ->where('dokter.nm_dokter', $j->nm_dokter)
-                                ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
-                                ->orderBy('reg_periksa.jam_reg', 'desc')
-                                ->limit(1)
-                                ->get()
-                                ->all();
-                            $current = $lastRows[0] ?? null;
-                        }
-                    }
-
-                    $sessions[] = [
-                        'nm_poli' => $j->nm_poli,
-                        'nm_dokter' => $j->nm_dokter,
-                        'jam_mulai' => $jm,
-                        'jam_selesai' => $js,
-                        'status' => $status,
-                        'current' => $current,
-                        'pasien' => $pasList,
-                    ];
-                } catch (\Throwable $e) {
-                    // skip baris jadwal bermasalah
-                }
-            }
-        } catch (\Throwable $e) {
-            $sessions = [];
-        }
+        $hari = $this->hariIdUpper();
+        $sessions = $this->fetchSessionsToday($hari);
 
         return view('display.partials._queue', compact('sessions'));
     }
 
-    // Partial untuk menampilkan nomor antrian saat ini (hero). Jika jadwal praktik belum dimulai, tampilkan "000".
+    /**
+     * Partial untuk menampilkan nomor antrian saat ini (hero).
+     * Jika jadwal praktik belum dimulai, tampilkan "000".
+     */
     public function partialCurrent(Request $request){
         $nmPoli = $request->query('poli');
         $nmDokter = $request->query('dokter');
@@ -352,28 +141,15 @@ class DisplayController extends Controller
         $started = true; // default: anggap mulai, kecuali bisa dipastikan belum mulai
 
         try {
-            // Cek jadwal hari ini untuk poli/dokter (jika disediakan)
-            $locale = 'id';
-            Carbon::setLocale($locale);
-            $hari = Str::upper(Carbon::now()->locale($locale)->dayName);
+            $hari = $this->hariIdUpper();
 
-            $jadwal = DB::connection('khanza')->table('jadwal')
-                ->join('dokter', 'dokter.kd_dokter', '=', 'jadwal.kd_dokter')
-                ->join('poliklinik', 'poliklinik.kd_poli', '=', 'jadwal.kd_poli')
-                ->select('jadwal.*', 'dokter.nm_dokter', 'poliklinik.nm_poli')
-                ->where('hari_kerja', $hari)
-                ->when($nmPoli, fn($q) => $q->where('poliklinik.nm_poli', $nmPoli))
-                ->when($nmDokter, fn($q) => $q->where('dokter.nm_dokter', $nmDokter))
-                ->first();
-
+            $jadwal = $this->fetchJadwalToday($hari, $nmPoli, $nmDokter);
             if ($jadwal && $jadwal->jam_mulai !== '00:00:00' && $jadwal->jam_selesai !== '00:00:00') {
-                try {
-                    $jm = Carbon::createFromFormat('H:i:s', $jadwal->jam_mulai);
-                    $js = Carbon::createFromFormat('H:i:s', $jadwal->jam_selesai);
-                    $now = Carbon::now();
+                $jm = $this->parseJam($jadwal->jam_mulai);
+                $js = $this->parseJam($jadwal->jam_selesai);
+                $now = Carbon::now();
+                if ($jm && $js) {
                     $started = $now->greaterThanOrEqualTo($jm) && $now->lessThanOrEqualTo($js);
-                } catch (\Throwable $e) {
-                    $started = true; // parsing gagal, jangan blokir tampilan
                 }
             }
 
@@ -383,44 +159,218 @@ class DisplayController extends Controller
                 $nmPoli = $nmPoli ?: ($jadwal->nm_poli ?? null);
                 $nmDokter = $nmDokter ?: ($jadwal->nm_dokter ?? null);
             }
-            if ($started) {
-                $rows = DB::connection('khanza')->table('reg_periksa')
-                    ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
-                    ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
-                    ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
-                    ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
-                    ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
-                    ->where('poliklinik.nm_poli', $nmPoli)
-                    ->where('dokter.nm_dokter', $nmDokter)
-                    ->where('stts', 'Belum')
-                    ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) asc')
-                    ->orderBy('reg_periksa.jam_reg', 'asc')
-                    ->get()
-                    ->all();
-                $current = $rows[0] ?? null;
-                if (!$current) {
-                    $rowsLast = DB::connection('khanza')->table('reg_periksa')
-                        ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
-                        ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
-                        ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
-                        ->select('reg_periksa.no_reg', 'reg_periksa.no_rkm_medis', 'pasien.nm_pasien', 'reg_periksa.no_rawat', 'dokter.nm_dokter', 'reg_periksa.jam_reg')
-                        ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
-                        ->where('poliklinik.nm_poli', $nmPoli)
-                        ->where('dokter.nm_dokter', $nmDokter)
-                        ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
-                        ->orderBy('reg_periksa.jam_reg', 'desc')
-                        ->limit(1)
-                        ->get()
-                        ->all();
-                    $current = $rowsLast[0] ?? null;
-                }
+
+            if ($started && $nmPoli && $nmDokter) {
+                $current = $this->resolveCurrent('Dalam Pelayanan', $nmPoli, $nmDokter);
             } else {
                 $current = null; // sebelum mulai: hero akan tampil "000"
             }
         } catch (\Throwable $e) {
+            report($e);
             // biarkan $current tetap null
         }
 
-        return view('display.partials._current', compact('current','started'));
+        return view('display.partials._current', compact('current', 'started'));
+    }
+
+    // ===========================
+    // Private helpers
+    // ===========================
+
+    private function hariIdUpper(): string{
+        $locale = 'id';
+        Carbon::setLocale($locale);
+        return Str::upper(Carbon::now()->locale($locale)->dayName); // SENIN/SELASA/...
+    }
+
+    private function parseJam(?string $jam): ?Carbon{
+        try {
+            return ($jam && $jam !== '00:00:00') ? Carbon::createFromFormat('H:i:s', $jam) : null;
+        } catch (\Throwable $e) {
+            report($e);
+            return null;
+        }
+    }
+
+    private function fetchJadwalToday(string $hari, ?string $nmPoli, ?string $nmDokter)
+    {
+        try {
+            return DB::connection('khanza')->table('jadwal')
+                ->join('dokter', 'dokter.kd_dokter', '=', 'jadwal.kd_dokter')
+                ->join('poliklinik', 'poliklinik.kd_poli', '=', 'jadwal.kd_poli')
+                ->select('jadwal.*', 'dokter.nm_dokter', 'poliklinik.nm_poli')
+                ->where('hari_kerja', $hari)
+                ->when($nmPoli, fn($q) => $q->where('poliklinik.nm_poli', $nmPoli))
+                ->when($nmDokter, fn($q) => $q->where('dokter.nm_dokter', $nmDokter))
+                ->first();
+        } catch (\Throwable $e) {
+            report($e);
+            return null;
+        }
+    }
+
+    private function computeStatus(Carbon $now, ?Carbon $jm, ?Carbon $js): string
+    {
+        if (!$jm || !$js) {
+            return 'Belum Mulai';
+        }
+        if ($now->lt($jm)) {
+            return 'Belum Mulai';
+        }
+        if ($now->gt($js)) {
+            return 'Selesai';
+        }
+        return 'Dalam Pelayanan';
+    }
+
+    /**
+     * Ambil list pasien berstatus "Belum" untuk poli-dokter tertentu, arah ASC/DESC.
+     *
+     * @return array<object>
+     */
+    private function fetchPasienBelum(string $nmPoli, string $nmDokter, string $direction = 'asc'): array
+    {
+        try {
+            $q = DB::connection('khanza')->table('reg_periksa')
+                ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
+                ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
+                ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
+                ->select(
+                    'reg_periksa.no_reg',
+                    'reg_periksa.no_rkm_medis',
+                    'pasien.nm_pasien',
+                    'reg_periksa.no_rawat',
+                    'dokter.nm_dokter',
+                    'reg_periksa.jam_reg'
+                )
+                ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
+                ->where('poliklinik.nm_poli', $nmPoli)
+                ->where('dokter.nm_dokter', $nmDokter);
+
+            if (strtolower($direction) === 'asc') {
+                $q->where('stts', 'Belum')
+                  ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) asc')
+                  ->orderBy('reg_periksa.jam_reg', 'asc');
+            } else {
+                $q->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
+                  ->orderBy('reg_periksa.jam_reg', 'desc');
+            }
+
+            return $q->get()->all();
+        } catch (\Throwable $e) {
+            report($e);
+            return [];
+        }
+    }
+
+    private function fetchLastPasienOfToday(string $nmPoli, string $nmDokter): ?object
+    {
+        try {
+            $rows = DB::connection('khanza')->table('reg_periksa')
+                ->join('dokter', 'reg_periksa.kd_dokter', '=', 'dokter.kd_dokter')
+                ->join('pasien', 'reg_periksa.no_rkm_medis', '=', 'pasien.no_rkm_medis')
+                ->join('poliklinik', 'reg_periksa.kd_poli', '=', 'poliklinik.kd_poli')
+                ->select(
+                    'reg_periksa.no_reg',
+                    'reg_periksa.no_rkm_medis',
+                    'pasien.nm_pasien',
+                    'reg_periksa.no_rawat',
+                    'dokter.nm_dokter',
+                    'reg_periksa.jam_reg'
+                )
+                ->whereDate('reg_periksa.tgl_registrasi', Carbon::today())
+                ->where('poliklinik.nm_poli', $nmPoli)
+                ->where('dokter.nm_dokter', $nmDokter)
+                ->orderByRaw('CAST(reg_periksa.no_reg AS UNSIGNED) desc')
+                ->orderBy('reg_periksa.jam_reg', 'desc')
+                ->limit(1)
+                ->get()
+                ->all();
+
+            return $rows[0] ?? null;
+        } catch (\Throwable $e) {
+            report($e);
+            return null;
+        }
+    }
+
+    /**
+     * Pasien yang sedang dipanggil = antrean terdepan (status 'Belum' paling awal).
+     * Jika belum mulai: kembalikan null -> akan ditampilkan "000".
+     * Jika tidak ada 'Belum' lagi: fallback ke nomor terakhir hari ini.
+     */
+    private function resolveCurrent(string $status, ?string $nmPoli, ?string $nmDokter): ?object
+    {
+        if (!$nmPoli || !$nmDokter) {
+            return null;
+        }
+
+        if ($status === 'Belum Mulai') {
+            return null;
+        }
+
+        $currentAsc = $this->fetchPasienBelum($nmPoli, $nmDokter, 'asc');
+        if (!empty($currentAsc)) {
+            return $currentAsc[0] ?? null;
+        }
+
+        return $this->fetchLastPasienOfToday($nmPoli, $nmDokter);
+    }
+
+    /**
+     * Ambil semua sesi hari ini yang jamnya valid dan belum "Selesai".
+     *
+     * @return array<array<string, mixed>>
+     */
+    private function fetchSessionsToday(string $hari): array
+    {
+        $sessions = [];
+        try {
+            $now = Carbon::now();
+
+            $jadwalsAct = DB::connection('khanza')->table('jadwal')
+                ->join('dokter', 'dokter.kd_dokter', '=', 'jadwal.kd_dokter')
+                ->join('poliklinik', 'poliklinik.kd_poli', '=', 'jadwal.kd_poli')
+                ->select('jadwal.*', 'dokter.nm_dokter', 'poliklinik.nm_poli')
+                ->where('hari_kerja', $hari)
+                ->where('jadwal.jam_mulai', '!=', '00:00:00')
+                ->where('jadwal.jam_selesai', '!=', '00:00:00')
+                ->get();
+
+            foreach ($jadwalsAct as $j) {
+                try {
+                    $jm = $this->parseJam($j->jam_mulai);
+                    $js = $this->parseJam($j->jam_selesai);
+
+                    $status = $this->computeStatus($now, $jm, $js);
+
+                    // Sembunyikan sesi yang sudah berakhir
+                    if ($status === 'Selesai') {
+                        continue;
+                    }
+
+                    $pasList = $this->fetchPasienBelum($j->nm_poli, $j->nm_dokter, 'asc');
+
+                    $current = $this->resolveCurrent($status, $j->nm_poli, $j->nm_dokter);
+
+                    $sessions[] = [
+                        'nm_poli' => $j->nm_poli,
+                        'nm_dokter' => $j->nm_dokter,
+                        'jam_mulai' => $jm,
+                        'jam_selesai' => $js,
+                        'status' => $status,
+                        'current' => $current,
+                        'pasien' => $pasList,
+                    ];
+                } catch (\Throwable $e) {
+                    report($e); // skip baris jadwal bermasalah
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+            $sessions = [];
+        }
+
+        return $sessions;
     }
 }
