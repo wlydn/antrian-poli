@@ -119,9 +119,6 @@ class DisplayController extends Controller
         ));
     }
 
-    /**
-     * Partial untuk auto-refresh list antrian: kembalikan hanya HTML partial queue
-     */
     public function partialQueue(){
         $hari = $this->hariIdUpper();
         $sessions = $this->fetchSessionsToday($hari);
@@ -129,13 +126,9 @@ class DisplayController extends Controller
         return view('display.partials._queue', compact('sessions'));
     }
 
-    /**
-     * Partial untuk menampilkan nomor antrian saat ini (hero).
-     * Jika jadwal praktik belum dimulai, tampilkan "000".
-     */
-    public function partialCurrent(Request $request){
-        $nmPoli = $request->query('poli');
-        $nmDokter = $request->query('dokter');
+    public function partialCurrent(){
+        $nmPoli = request()->query('poli');
+        $nmDokter = request()->query('dokter');
 
         $current = null;
         $started = true; // default: anggap mulai, kecuali bisa dipastikan belum mulai
@@ -192,8 +185,7 @@ class DisplayController extends Controller
         }
     }
 
-    private function fetchJadwalToday(string $hari, ?string $nmPoli, ?string $nmDokter)
-    {
+    private function fetchJadwalToday(string $hari, ?string $nmPoli, ?string $nmDokter){
         try {
             return DB::connection('khanza')->table('jadwal')
                 ->join('dokter', 'dokter.kd_dokter', '=', 'jadwal.kd_dokter')
