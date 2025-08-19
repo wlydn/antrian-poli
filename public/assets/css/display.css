@@ -10,6 +10,7 @@
   --muted:rgba(0,0,0,.6);
   --border:#e5e7eb;
   --brand:#51ba79;
+  --footer:#1c5ca4;
   --accent:#0073df;
 }
 
@@ -175,7 +176,7 @@ html,body{
 .footer-full{
   position: fixed;
   left: 0; right: 0; bottom: 0;
-  background: #1c5ca4;
+  background: var(--footer);
   border-top: 1px solid var(--border);
   z-index: 50;
   height: 56px;
